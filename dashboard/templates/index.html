@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SmartSense IoT Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/plotly.js-dist@2.27.0/plotly.min.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',sans-serif;background:#0f1117;color:#e0e0e0;min-height:100vh}
+  header{background:#1a1d27;padding:16px 24px;border-bottom:1px solid #2a2d3a;display:flex;align-items:center;gap:12px}
+  header h1{font-size:20px;font-weight:600;color:#fff}
+  .badge{font-size:11px;padding:3px 10px;border-radius:20px;font-weight:500}
+  .badge-green{background:#1a3a2a;color:#4ade80}
+  .badge-red{background:#3a1a1a;color:#f87171}
+  .badge-gray{background:#2a2d3a;color:#9ca3af}
+  .main{padding:20px 24px}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+  .stat-card{background:#1a1d27;border:1px solid #2a2d3a;border-radius:10px;padding:16px}
+  .stat-card .label{font-size:12px;color:#9ca3af;margin-bottom:6px}
+  .stat-card .value{font-size:26px;font-weight:600;color:#fff}
+  .stat-card .sub{font-size:12px;color:#6b7280;margin-top:4px}
+  .charts{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}
+  .chart-card{background:#1a1d27;border:1px solid #2a2d3a;border-radius:10px;padding:16px}
+  .chart-card h2{font-size:14px;font-weight:500;color:#d1d5db;margin-bottom:12px}
+  .chart-full{background:#1a1d27;border:1px solid #2a2d3a;border-radius:10px;padding:16px;margin-bottom:20px}
+  .chart-full h2{font-size:14px;font-weight:500;color:#d1d5db;margin-bottom:12px}
+  .anomaly-table{background:#1a1d27;border:1px solid #2a2d3a;border-radius:10px;padding:16px}
+  .anomaly-table h2{font-size:14px;font-weight:500;color:#d1d5db;margin-bottom:12px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;padding:8px 10px;color:#6b7280;border-bottom:1px solid #2a2d3a;font-weight:400}
+  td{padding:8px 10px;border-bottom:1px solid #1e2130;color:#d1d5db}
+  tr:last-child td{border-bottom:none}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
+  .dot-green{background:#4ade80} .dot-red{background:#f87171}
+  #status-dot{width:10px;height:10px;border-radius:50%;background:#4ade80;animation:pulse 2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  .empty{color:#6b7280;font-size:13px;padding:20px 0;text-align:center}
+  @media(max-width:700px){.stats{grid-template-columns:1fr 1fr}.charts{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <span id="status-dot"></span>
+  <h1>SmartSense IoT</h1>
+  <span class="badge badge-gray" id="device-badge">No device</span>
+  <span class="badge badge-green" id="status-badge">Live</span>
+  <span style="margin-left:auto;font-size:12px;color:#6b7280" id="last-update">—</span>
+</header>
+
+<div class="main">
+  <!-- Stats row -->
+  <div class="stats">
+    <div class="stat-card">
+      <div class="label">Temperature</div>
+      <div class="value" id="v-temp">—</div>
+      <div class="sub">°C</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Humidity</div>
+      <div class="value" id="v-hum">—</div>
+      <div class="sub">%</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Pressure</div>
+      <div class="value" id="v-pres">—</div>
+      <div class="sub">hPa</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Anomaly Rate</div>
+      <div class="value" id="v-rate">—</div>
+      <div class="sub" id="v-counts">0 / 0 readings</div>
+    </div>
+  </div>
+
+  <!-- Live charts grid -->
+  <div class="charts">
+    <div class="chart-card">
+      <h2>Temperature (°C)</h2>
+      <div id="chart-temp" style="height:220px"></div>
+    </div>
+    <div class="chart-card">
+      <h2>Humidity (%)</h2>
+      <div id="chart-hum" style="height:220px"></div>
+    </div>
+  </div>
+  <div class="chart-full">
+    <h2>Pressure (hPa)</h2>
+    <div id="chart-pres" style="height:200px"></div>
+  </div>
+
+  <!-- Anomaly log -->
+  <div class="anomaly-table">
+    <h2>Anomaly Log</h2>
+    <table>
+      <thead>
+        <tr><th>Time</th><th>Temp</th><th>Hum</th><th>Press</th><th>AI Analysis</th></tr>
+      </thead>
+      <tbody id="anomaly-body">
+        <tr><td colspan="5" class="empty">No anomalies detected yet</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const COLORS = { temp:'#f97316', hum:'#38bdf8', pres:'#a78bfa', anomaly:'#f87171' };
+const BG = '#0f1117', GRID = '#1e2130', TEXT = '#9ca3af';
+const layout = (yTitle) => ({
+  paper_bgcolor: BG, plot_bgcolor: BG,
+  margin: {t:4,b:28,l:44,r:8},
+  font: {color: TEXT, size: 11},
+  xaxis: {gridcolor: GRID, showline: false},
+  yaxis: {gridcolor: GRID, showline: false, title: yTitle},
+  showlegend: false
+});
+const cfg = {displayModeBar: false, responsive: true};
+
+Plotly.newPlot('chart-temp', [{x:[],y:[],mode:'lines',line:{color:COLORS.temp,width:2},name:'Temp'}], layout('°C'), cfg);
+Plotly.newPlot('chart-hum',  [{x:[],y:[],mode:'lines',line:{color:COLORS.hum,width:2},name:'Hum'}],  layout('%'), cfg);
+Plotly.newPlot('chart-pres', [{x:[],y:[],mode:'lines',line:{color:COLORS.pres,width:2},name:'Press'}],layout('hPa'), cfg);
+
+async function fetchStats() {
+  try {
+    const s = await fetch('/api/stats').then(r=>r.json());
+    if (!s.latest) return;
+    document.getElementById('v-temp').textContent  = s.latest.temperature ?? '—';
+    document.getElementById('v-hum').textContent   = s.latest.humidity ?? '—';
+    document.getElementById('v-pres').textContent  = s.latest.pressure ?? '—';
+    document.getElementById('v-rate').textContent  = s.rate + '%';
+    document.getElementById('v-counts').textContent= s.anomalies + ' / ' + s.total + ' readings';
+    document.getElementById('device-badge').textContent = s.latest.device || 'esp32';
+    document.getElementById('last-update').textContent  = 'Updated ' + new Date().toLocaleTimeString();
+    const sb = document.getElementById('status-badge');
+    sb.textContent = s.status === 'anomaly' ? '⚠ Anomaly' : 'Normal';
+    sb.className = 'badge ' + (s.status === 'anomaly' ? 'badge-red' : 'badge-green');
+  } catch(e){}
+}
+
+async function fetchReadings() {
+  try {
+    const data = await fetch('/api/readings').then(r=>r.json());
+    if (!data.length) return;
+    const ts   = data.map(d => d.timestamp ? d.timestamp.slice(11,19) : '');
+    const temps = data.map(d => d.temperature);
+    const hums  = data.map(d => d.humidity);
+    const press = data.map(d => d.pressure);
+
+    // Anomaly markers
+    const aIdx = data.map((d,i) => d.is_anomaly ? i : null).filter(i=>i!==null);
+    const aMark = {
+      x: aIdx.map(i=>ts[i]), y: aIdx.map(i=>temps[i]),
+      mode:'markers', marker:{color:COLORS.anomaly, size:10, symbol:'x'}, name:'Anomaly'
+    };
+    Plotly.react('chart-temp', [{x:ts,y:temps,mode:'lines',line:{color:COLORS.temp,width:2}}, aMark], layout('°C'), cfg);
+    Plotly.react('chart-hum',  [{x:ts,y:hums, mode:'lines',line:{color:COLORS.hum,width:2}}],  layout('%'), cfg);
+    Plotly.react('chart-pres', [{x:ts,y:press,mode:'lines',line:{color:COLORS.pres,width:2}}], layout('hPa'), cfg);
+  } catch(e){}
+}
+
+async function fetchAnomalies() {
+  try {
+    const data = await fetch('/api/anomalies').then(r=>r.json());
+    const tbody = document.getElementById('anomaly-body');
+    if (!data.length) { tbody.innerHTML='<tr><td colspan="5" class="empty">No anomalies detected yet</td></tr>'; return; }
+    tbody.innerHTML = [...data].reverse().slice(0,20).map(a => `
+      <tr>
+        <td>${(a.timestamp||'').slice(11,19)}</td>
+        <td style="color:#f97316">${a.temperature}°C</td>
+        <td style="color:#38bdf8">${a.humidity}%</td>
+        <td style="color:#a78bfa">${a.pressure} hPa</td>
+        <td style="color:#9ca3af;font-size:12px">${a.alert_message||'Anomaly detected'}</td>
+      </tr>`).join('');
+  } catch(e){}
+}
+
+function tick() { fetchStats(); fetchReadings(); fetchAnomalies(); }
+tick();
+setInterval(tick, 3000);
+</script>
+</body>
+</html>
