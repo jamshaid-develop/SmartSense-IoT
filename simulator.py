@@ -1,19 +1,22 @@
 import requests, time, random
 
-URL = "http://127.0.0.1:7860/api/ingest"
-print("Simulator chalu hai... (Ctrl+C se band karo)")
+URL = "https://jamshaid-3990-smartsense-iot.hf.space/api/ingest"
 
-i = 0
-while True:          # ← hamesha chalta rahega
-    temp = 65.0 if i % 50 == 0 and i != 0 else round(24 + random.uniform(-2,2), 1)
+print("Permanent simulator chalu hai...")
+reading_id = 0
+while True:
+    reading_id += 1
+    temp = 65.0 if reading_id % 100 == 0 else round(24 + random.uniform(-2,2), 1)
     data = {
-        "id": i,
+        "id": reading_id,
         "temperature": temp,
         "humidity": round(58 + random.uniform(-5,5), 1),
         "pressure": round(1013 + random.uniform(-3,3), 1),
-        "device": "simulator"
+        "device": "smartsense-esp32"
     }
-    requests.post(URL, json=data)
-    print(f"Reading {i} bheja: Temp={temp}°C")
-    i += 1
-    time.sleep(2)
+    try:
+        requests.post(URL, json=data, timeout=10)
+        print(f"Reading {reading_id} bheja: Temp={temp}°C")
+    except Exception as e:
+        print(f"Error: {e}")
+    time.sleep(5)
